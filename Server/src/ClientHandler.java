@@ -2,9 +2,12 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.math.BigInteger;
 import java.net.Socket;
 import java.security.KeyFactory;
+import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.spec.X509EncodedKeySpec;
 
 
@@ -36,7 +39,43 @@ public class ClientHandler extends Thread {
 	 * User authentication
 	 */
 	private void authUser(String userName) {
-		
+		try {
+			
+			System.out.println("New user authentication : " + userName);
+			
+			//Get random nonce end send it
+			Frame fr = new Frame();
+			SecureRandom random = new SecureRandom();
+			String nonce = new BigInteger(130, random).toString(32);
+			fr.data = kh.encrypt(nonce, kh.keyDb.get(userName));
+			outSocket.writeObject(fr); outSocket.flush();
+			
+			System.out.println("Sent random nonce: " + nonce);
+			
+			//Receive encrypted nonce and verify
+			fr = (Frame) inSocket.readObject();
+			ObjectInputStream inputStream = new ObjectInputStream(new FileInputStream(kh.PRIVATE_KEY));
+			final PrivateKey privateKey = (PrivateKey) inputStream.readObject();
+			final String plainText = kh.decrypt(fr.data, privateKey);
+			inputStream.close();
+			
+			//Send confimation
+			if(nonce.equals(plainText)){
+				//Auth ok
+				System.out.println("SUCCESS");
+				outSocket.writeUTF("OK");
+			} else {
+				//Auth failed
+				System.out.println("FAILED");
+				outSocket.writeUTF("FAIL");
+			}
+			
+			outSocket.flush();
+			
+		} catch ( Exception e ){
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		
 	}
 
@@ -54,29 +93,23 @@ public class ClientHandler extends Thread {
 			ObjectInputStream inputStream = new ObjectInputStream(new FileInputStream(kh.PUBLIC_KEY));
 			PublicKey publicKey = (PublicKey) inputStream.readObject();
 			frame.data = publicKey.getEncoded();
-			
-			//ObjectOutputStream outSocket = new ObjectOutputStream(socket.getOutputStream());
 			outSocket.writeObject(frame); outSocket.flush();
+			inputStream.close();
 			
 			System.out.println("Server's key: sent");
-			
-			//inputStream.close();
-			
-			System.out.println("KEY SENT - " + publicKey.toString());
 			
 			// Wait for user public key
 			frame = (Frame) inSocket.readObject();
 			byte[] pubKey = frame.data;                 
 			X509EncodedKeySpec ks = new X509EncodedKeySpec(pubKey);	
 			kh.keyDb.put(userName, KeyFactory.getInstance("RSA").generatePublic(ks));
-			System.out.println("KEY RECEIVED - " + userName + " - " + kh.keyDb.get(userName).toString());
-			System.out.println("User registered");
+			
+			System.out.println("User's key: received - registered");
 			
 			// Confirm
 			outSocket.writeUTF("OK"); outSocket.flush();
 			
-			System.out.println("confirmation : sent");
-			
+			System.out.println("confirmation : sent\n");			
 			
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
@@ -98,9 +131,6 @@ public class ClientHandler extends Thread {
 		
 		try {
 			
-			//out.flush();
-			//in.read(); in.read();
-			
 			String operation = inSocket.readUTF(); System.out.println("Received: " + operation);
 			String[] splitString = operation.split("\\s");
 			Actions act = Actions.valueOf(splitString[0].trim());
@@ -117,8 +147,8 @@ public class ClientHandler extends Thread {
 			}
 				
 			// Close streams and socket
-			inSocket.close();
-			outSocket.close();
+			//inSocket.close();
+			//outSocket.close();
 			socket.close();
 			
 		} catch (IOException e) {
