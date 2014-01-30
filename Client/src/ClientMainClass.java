@@ -1,21 +1,11 @@
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.math.BigInteger;
-import java.net.InetAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.KeyFactory;
-import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.SecureRandom;
-import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 
 
@@ -31,7 +21,6 @@ public class ClientMainClass {
 	static String userName = new BigInteger(130, random).toString(32);
 	static PublicKey serverPubKey;
 	
-	@SuppressWarnings("deprecation")
 	private static void userRegistration(Socket socket){
 		
 		try {
@@ -39,8 +28,8 @@ public class ClientMainClass {
 			ObjectOutputStream outSocket = new ObjectOutputStream(socket.getOutputStream());
 			
 			// Send: "REG userName"
-			PrintWriter out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
-			out.write("REG " + userName + "\n"); out.flush();
+			//PrintWriter out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+			outSocket.writeUTF("REG " + userName + "\n"); outSocket.flush();
 			
 			System.out.println("REG userName : sent");
 			
@@ -58,13 +47,13 @@ public class ClientMainClass {
 			ObjectInputStream inputStream = new ObjectInputStream(new FileInputStream(kh.PUBLIC_KEY));
 			PublicKey publicKey = (PublicKey) inputStream.readObject();
 			frame.data = publicKey.getEncoded();
-			outSocket.writeObject(frame); out.flush();
+			outSocket.writeObject(frame); outSocket.flush();
 			
 			System.out.println("User public key : sent");
 			
 			// Receive: "OK"
-			BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-			String answer = in.readLine();
+			//BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+			String answer = inSocket.readUTF();
 			
 			System.out.println("Operation confirmed: " + answer);
 			
