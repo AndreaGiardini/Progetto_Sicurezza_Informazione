@@ -1,0 +1,141 @@
+\documentclass[12pt]{report}
+\usepackage{makeidx}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{color}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amssymb}
+\usepackage{fixltx2e}
+\usepackage[left=2cm,right=2cm,top=2cm,bottom=5cm]{geometry}
+\textwidth 6in
+\textheight 9in
+\topmargin 0in
+\headsep 0in
+\oddsidemargin 0.5cm
+\evensidemargin -0.5cm
+\hyphenchar\font=-1
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=Java,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true
+  tabsize=3
+}
+
+\begin{document}
+
+\chapter*{Sicurezza dell'informazione M}
+
+\section*{Descrizione del progetto}
+
+Il progetto ha come scopo quello creare un servizio di registrazione e autenticazione remoto. Un utente può registrarsi ad un server fornendo il proprio nome e la chiave pubblica a lui associata, in seguito potrà poi autenticarsi presso il server fornendo prova della sua identità tramite un protocollo di sfida/risposta. 
+
+In questo modo i due host saranno in grado di comunicare in maniera riservata, senza che un intruso possa capire quali informazioni si stanno scambiando sul canale: pur potendo intercettare le chiavi pubbliche di entrambi ed i messaggi che stanno trasmettendo l'intruso non sarà in grado di decifrare nessuna informazione.
+
+Lo scopo di questo programma è fornire un esempio delle API crittografiche fornite dalle librerie standard di Java.
+
+\section*{Protocollo - Registrazione}
+
+In questa sezione verrà descritto il protocollo per la registrazione dell'utente: ogni nuovo utente che voglia iscriversi al sistema dovrà fornire un username con il quale registrarsi e la propria chiave pubblica. Il server per completare la registrazione dovrà tenere in memoria queste informazioni in modo da poter identificare l'utente durante la fase di autenticazione.
+
+Indichiamo dunque con U il nostro utente e come S il server al quale vogliamo fare riferimento, la coppia di chiavi asimmetriche del server è definita da S\textsubscript{PUB} e S\textsubscript{PRV}, mentre la coppia di chiavi dell'utente è indicata come U\textsubscript{PUB} e U\textsubscript{PRV}.
+
+\begin{quote}
+U $\rightarrow$ S : "REG user"\newline
+S $\rightarrow$ U : "S\textsubscript{PUB}"\newline
+U $\rightarrow$ S : "U\textsubscript{PUB}"\newline
+S $\rightarrow$ U : "OK"\newline
+\end{quote}
+
+\newpage
+
+\subsection*{Generazione delle chiavi} 
+
+Il codice qui riportato genera una coppia di chiavi asimmetriche dell'algoritmo e della lunghezza indicata (in questo caso è stato utilizzato RSA a 1024 bit).
+
+\begin{lstlisting}
+KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+keyGen.initialize(1024);
+KeyPair key = keyGen.generateKeyPair();
+\end{lstlisting}
+
+\noindent
+Partendo dalla prima riga possiamo vedere come la classe KeyPairGenerator sia in realtà statica e quindi per ottenere una sua istanza è necessario utilizzare il metodo \textit{getInstance()}, specificando quale algoritmo si intende utilizzare. Il secodo paramentro che viene definito all'interno del metodo \textit{initialize()} specifica quale dimensione deve avere la chiave che vogliamo generare: è importante tener conto che aumentando la lunghezza della chiave aumentiamo la sicurezza ma le operazioni di generazione, criptazione e decriptazione risulteranno più costose in termini di risorse.\\
+Altri algoritmi disponibili sono DiffieHellman, RSA e DSA. Dopo aver effettuato questa operazione è possibile accedere alla chiave pubblica e privata utilizzando i metodi \textit{key.getPublic()} e \textit{key.getPrivate()}.
+
+\subsection*{Invio della chiave}
+
+Per inviare la chiave pubblica da un host all'altro è stato necessario incapsulare il suo valore all'interno di una classe accessoria di nome \textit{Frame}. Definendo questa classe come \textit{Serializable} ed inserendo al suo interno in campo \textit{byte[] data} ci è stato possibile inviare in maniera molto più agile la chiave tramite socket.
+
+\begin{lstlisting}
+Frame frame = new Frame();
+ObjectInputStream inputStream = new ObjectInputStream(new FileInputStream(kh.PUBLIC_KEY));
+PublicKey publicKey = (PublicKey) inputStream.readObject();
+frame.data = publicKey.getEncoded();
+outSocket.writeObject(frame); outSocket.flush();
+\end{lstlisting}
+
+Come è possibile osservare dal codice è stato necessario convertire la chiave e portarla sotto forma di array di byte, che è stato poi incapsulato all'interno dell'oggetto \textit{Frame}. Dopo aver preparato l'oggetto abbiamo inviato il tutto al destinatario tramite la primitiva \textit{writeObject()} sulla socket di invio, seguita da un \textit{flush()} per assicurarci che tutto il buffer di invio venga svuotato.
+
+\subsection*{Ricezione della chiave}
+
+\begin{lstlisting}
+frame = (Frame) inSocket.readObject();
+byte[] pubKey = frame.data;                 
+X509EncodedKeySpec ks = new X509EncodedKeySpec(pubKey);	
+kh.keyDb.put(userName, KeyFactory.getInstance("RSA").generatePublic(ks));
+\end{lstlisting}
+
+Come è possibile vedere anche in ricezione necessitiamo di utilizzare la classe \textit{Frame} per incapsulare la chiave in arrivo, questa viene poi riportata alla sua classe originale (\textit{PublicKey}) tramite altri due classi accessorie: \textit{X509EncodedKeySpec} e \textit{KeyFactory}.
+Nel Server er mantenere in memoria le associazioni tra username e chiave abbiamo utilizzato una \textit{HashMap$\prec$String,PublicKey$\succ$}. Ricordiamo che il client memorizza la chiave pubblica del server durante questa fase.
+
+\section*{Protocollo - Autenticazione}
+
+Dopo essersi registrato presso il server è possibile per l'utente autenticarsi presso il servizio tramite il protocollo che segue: all'inizio l'utente invia al server il nome utente con il quale intende identificarsi, nel caso in cui l'utente risulti effettivamente registrato il server risponde con un messaggio criptato con la chiave pubblica dell'utente specificato nel primo passaggio.\\
+A questo punto se \textit{U} è veramente chi dichiara di essere dovrà essere in grado di decriptare il messaggio tramite la chiave privata e quindi di ottenere il \textit{nonce} inviatogli dal server.\\
+Una volta avvenuto ciò l'utente cripta nuovamente il \textit{nonce} con la chiave pubblica del server e lo invia, se il server verifica che il \textit{nonce} inviato è lo stesso che ha ricevuto allora l'autenticazione è completata: solo l'utente U era in possesso della chiave privata corrispondente e quindi è l'unico in grado di decifrare il messaggio.
+
+\begin{quote}
+U $\rightarrow$ S : "AUTH user"\newline
+S $\rightarrow$ U : "E\textsubscript{U\textsubscript{PUB}}(nonce)"\newline
+U $\rightarrow$ S : "E\textsubscript{S\textsubscript{PUB}}(nonce)"\newline
+S $\rightarrow$ U : "OK"\newline
+\end{quote}
+
+\subsection*{Criptazione e Decriptazione}
+
+\begin{lstlisting}
+byte[] cipherText = null;
+Cipher cipher = Cipher.getInstance("RSA");
+cipher.init(Cipher.ENCRYPT_MODE, key);
+cipherText = cipher.doFinal(text);
+\end{lstlisting}
+
+\begin{lstlisting}
+byte[] dectyptedText = null;
+Cipher cipher = Cipher.getInstance("RSA");
+cipher.init(Cipher.DECRYPT_MODE, key);
+dectyptedText = cipher.doFinal(text);
+\end{lstlisting}
+\newpage
+
+Come è possibile notare una volta ottenuta la chiave criptare e decriptare è molto semplice, l'unica classe di cui abbiamo bisogno è \textit{Cipher} che, a tutti gli effetti, si comporta come un cifrario diverso a seconda di quale algoritmo viene specificato.\\
+Il metodo \textit{init()} è necessario inserire quale operazione si desidera fare (Criptazione / Decriptazione) e la chiave che si desidera utilizzare.\\
+Infine il metodo \textit{doFinal()} prende come in input il testo da convertire ed effettua la trasformazione.
+
+\end{document}
